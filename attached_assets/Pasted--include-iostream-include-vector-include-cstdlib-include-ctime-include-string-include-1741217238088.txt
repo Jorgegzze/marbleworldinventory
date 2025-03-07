@@ -1,0 +1,169 @@
+#include <iostream>
+#include <vector>
+#include <cstdlib>
+#include <ctime>
+#include <string>
+#include <thread>
+#include <chrono>
+#include <algorithm>
+#include <termios.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+const int SCREEN_WIDTH = 40;  // Reduced width for better alignment
+const int SCREEN_HEIGHT = 20; // Reduced height for better readability
+
+struct Enemy {
+    int x, y;
+    int speed;
+    bool active;
+};
+
+struct Bullet {
+    int x, y;
+    bool active;
+};
+
+int playerX = SCREEN_WIDTH / 2;
+int playerY = SCREEN_HEIGHT - 2;
+bool gameOver = false;
+int score = 0;
+std::vector<Enemy> enemies;
+std::vector<Bullet> bullets;
+
+void clearScreen() {
+    std::cout << "\033[2J\033[H"; // ANSI escape codes to clear screen
+}
+
+int kbhit() {
+    struct termios oldt, newt;
+    int ch;
+    int oldf;
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+    ch = getchar();
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    fcntl(STDIN_FILENO, F_SETFL, oldf);
+    if (ch != EOF) {
+        ungetc(ch, stdin);
+        return 1;
+    }
+    return 0;
+}
+
+char getch() {
+    struct termios oldt, newt;
+    char ch;
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    ch = getchar();
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    return ch;
+}
+
+void drawGame() {
+    clearScreen();
+    for (int i = 0; i < SCREEN_HEIGHT; i++) {
+        for (int j = 0; j < SCREEN_WIDTH; j++) {
+            bool printed = false;
+            if (i == playerY && j == playerX) {
+                std::cout << "P"; // Player character
+                printed = true;
+            }
+            for (const auto& enemy : enemies) {
+                if (enemy.active && enemy.y == i && enemy.x == j) {
+                    std::cout << "E"; // Enemy character
+                    printed = true;
+                }
+            }
+            for (const auto& bullet : bullets) {
+                if (bullet.active && bullet.y == i && bullet.x == j) {
+                    std::cout << "|"; // Bullet character
+                    printed = true;
+                }
+            }
+            if (!printed) std::cout << " ";
+        }
+        std::cout << " |\n"; // Adds a visual right border
+    }
+    std::cout << std::string(SCREEN_WIDTH, '-') << "\n"; // Bottom border
+    std::cout << "Score: " << score << "\n";
+    if (gameOver) std::cout << "GAME OVER! Press R to Restart\n";
+}
+
+void updateGame() {
+    // Move bullets
+    for (auto& bullet : bullets) {
+        if (bullet.active) {
+            bullet.y--;
+            if (bullet.y < 0) bullet.active = false;
+        }
+    }
+    // Move enemies
+    for (auto& enemy : enemies) {
+        if (enemy.active) {
+            enemy.y++;
+            if (enemy.y >= SCREEN_HEIGHT) {
+                enemy.y = 0;
+                enemy.x = rand() % SCREEN_WIDTH;
+            }
+            // Check collision with player
+            if (enemy.x == playerX && enemy.y == playerY) {
+                gameOver = true;
+            }
+        }
+    }
+    // Check bullet-enemy collisions
+    for (auto& bullet : bullets) {
+        for (auto& enemy : enemies) {
+            if (bullet.active && enemy.active && bullet.x == enemy.x && bullet.y == enemy.y) {
+                bullet.active = false;
+                enemy.active = false;
+                score += 10;
+            }
+        }
+    }
+    bullets.erase(std::remove_if(bullets.begin(), bullets.end(), [](const Bullet& b) { return !b.active; }), bullets.end());
+    enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [](const Enemy& e) { return !e.active; }), enemies.end());
+}
+
+void handleInput() {
+    if (kbhit()) {
+        char key = getch();
+        if (key == 'a' && playerX > 0) playerX--; // Move left
+        if (key == 'd' && playerX < SCREEN_WIDTH - 1) playerX++; // Move right
+        if (key == ' ') bullets.push_back({ playerX, playerY - 1, true }); // Fire bullet
+        if (key == 'r' && gameOver) { // Restart game
+            gameOver = false;
+            score = 0;
+            enemies.clear();
+            bullets.clear();
+        }
+    }
+}
+
+void gameLoop() {
+    srand(time(0));
+    for (int i = 0; i < 5; i++) {
+        enemies.push_back({ rand() % SCREEN_WIDTH, rand() % (SCREEN_HEIGHT / 2), 1, true });
+    }
+    while (true) {
+        handleInput();
+        if (!gameOver) {
+            updateGame();
+            drawGame();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Game speed
+    }
+}
+
+int main() {
+    gameLoop();
+    return 0;
+}

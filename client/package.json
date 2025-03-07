@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "build": "vite build --outDir dist",
+    "bundle": "vite build --outDir dist && node scripts/create-package.js"
+  }
+}
